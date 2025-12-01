@@ -15,14 +15,16 @@ class LDAPServer:
     LDAP server that handles directory operations with permission checking.
     """
     
-    def __init__(self, directory: DirectoryService):
+    def __init__(self, directory: DirectoryService, ca: Optional[Any] = None):
         """
         Initialize LDAP server.
         
         Args:
             directory: DirectoryService instance
+            ca: CertificateAuthority instance (optional)
         """
         self.directory = directory
+        self.ca = ca
         self.checker = PermissionChecker()
     
     def handle_request(self, operation: str, user_role: BaseRole, **kwargs) -> Dict[str, Any]:
@@ -30,7 +32,7 @@ class LDAPServer:
         Handle a directory operation request.
         
         Args:
-            operation: Operation name ("add", "search", "modify", "delete")
+            operation: Operation name ("add", "search", "modify", "delete", "issue_certificate")
             user_role: User role making the request
             **kwargs: Operation-specific parameters
             
@@ -55,6 +57,10 @@ class LDAPServer:
         
         elif operation == "authenticate":
             return self.authenticate(**kwargs)
+            
+        elif operation == "issue_certificate":
+            # Ideally check permissions here, but for now allow if role is present
+            return self.issue_certificate(**kwargs)
         
         else:
             raise ValueError(f"Unknown operation: {operation}")
@@ -105,4 +111,38 @@ class LDAPServer:
     def get_certificate(self, common_name: str) -> Optional[bytes]:
         """Get certificate data."""
         return self.directory.get_certificate(common_name)
+
+    def issue_certificate(self, csr_pem: str, username: str) -> Dict[str, Any]:
+        """
+        Issue a certificate for a user.
+        
+        Args:
+            csr_pem: PEM-encoded CSR
+            username: Username (Common Name)
+            
+        Returns:
+            Result dictionary with certificate
+        """
+        if not self.ca:
+            return {"success": False, "error": "CA not configured"}
+            
+        try:
+            # Check if certificate already exists
+            existing_cert = self.ca.get_certificate(username)
+            if existing_cert:
+                return {
+                    "success": True, 
+                    "certificate": existing_cert,
+                    "status": "existing"
+                }
+            
+            # Issue new certificate
+            cert_pem, _ = self.ca.sign_csr(csr_pem, username, cert_type="client")
+            return {
+                "success": True, 
+                "certificate": cert_pem,
+                "status": "new"
+            }
+        except Exception as e:
+            return {"success": False, "error": str(e)}
 

@@ -77,3 +77,21 @@ class LDAPClient:
             password=password
         )
 
+    def request_certificate(self, username: str, csr_pem: str) -> Dict[str, Any]:
+        """
+        Request a certificate from the server.
+        
+        Args:
+            username: Username (Common Name)
+            csr_pem: PEM-encoded CSR
+            
+        Returns:
+            Result dictionary with certificate
+        """
+        return self.server.handle_request(
+            "issue_certificate",
+            self.user_role,
+            username=username,
+            csr_pem=csr_pem
+        )
+

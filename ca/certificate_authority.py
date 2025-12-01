@@ -9,6 +9,7 @@ This module implements the core Certificate Authority functionality:
 """
 
 import os
+from typing import Optional
 from datetime import datetime, timedelta
 from cryptography import x509
 from cryptography.x509.oid import NameOID, ExtensionOID
@@ -246,6 +247,22 @@ class CertificateAuthority:
         if not self._ca_certificate:
             raise RuntimeError("CA not initialized")
         return self._ca_certificate.public_bytes(serialization.Encoding.PEM).decode()
+    
+    def get_certificate(self, common_name: str) -> Optional[str]:
+        """
+        Get an existing certificate by common name.
+        
+        Args:
+            common_name: Common name of the certificate
+            
+        Returns:
+            PEM-encoded certificate string or None if not found
+        """
+        cert_path = os.path.join(self.certs_dir, f"{common_name}.crt")
+        if os.path.exists(cert_path):
+            with open(cert_path, "r") as f:
+                return f.read()
+        return None
     
     def verify_certificate(self, cert_pem):
         """
