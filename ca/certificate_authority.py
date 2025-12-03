@@ -275,16 +275,18 @@ class CertificateAuthority:
             True if certificate is valid and signed by this CA
         """
         try:
+            from cryptography.hazmat.primitives.asymmetric import padding
+            
             cert = x509.load_pem_x509_certificate(
                 cert_pem.encode(), default_backend()
             )
             
-            # Verify signature
+            # Verify signature using proper padding
             self._ca_certificate.public_key().verify(
                 cert.signature,
                 cert.tbs_certificate_bytes,
-                hashes.SHA256(),
-                default_backend()
+                padding.PKCS1v15(),
+                hashes.SHA256()
             )
             
             # Check validity period

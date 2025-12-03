@@ -8,10 +8,13 @@ This module provides role-based access control:
 - Secure communication
 """
 
-from .roles import OrganizationalAdmin, DomainAdmin, UserRole
-from .permissions import Permissions, PermissionChecker
+from .roles import OrganizationalAdmin, DomainAdmin, RegularUser, UserRole, BaseRole
+from .permissions import Permissions, PermissionChecker, RoleManager
 from .secure_communication import SecureChannel, SecureHandshake
 
-__all__ = ['OrganizationalAdmin', 'DomainAdmin', 'UserRole', 'Permissions', 'PermissionChecker', 
-           'SecureChannel', 'SecureHandshake']
+__all__ = [
+    'OrganizationalAdmin', 'DomainAdmin', 'RegularUser', 'UserRole', 'BaseRole',
+    'Permissions', 'PermissionChecker', 'RoleManager',
+    'SecureChannel', 'SecureHandshake'
+]
 

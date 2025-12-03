@@ -4,10 +4,13 @@ LDAP Server Simulation
 This module simulates an LDAP server that handles directory operations.
 """
 
-from typing import Dict, Optional, Any
+from typing import Dict, Optional, Any, TYPE_CHECKING
 from ldap.directory import DirectoryService
 from auth.roles import BaseRole
 from auth.permissions import Permissions, PermissionChecker
+
+if TYPE_CHECKING:
+    from ca.certificate_authority import CertificateAuthority
 
 
 class LDAPServer:
@@ -15,7 +18,7 @@ class LDAPServer:
     LDAP server that handles directory operations with permission checking.
     """
     
-    def __init__(self, directory: DirectoryService, ca: Optional[Any] = None):
+    def __init__(self, directory: DirectoryService, ca: Optional['CertificateAuthority'] = None):
         """
         Initialize LDAP server.
         

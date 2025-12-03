@@ -7,7 +7,6 @@ This module simulates TLS/SSL-like secure communication:
 - Secure message encryption/decryption
 """
 
-import os
 import secrets
 from typing import Optional
 from cryptography.hazmat.primitives import hashes, serialization
@@ -218,14 +217,15 @@ class SecureChannel:
 
 class SecureHandshake:
     """
-    Simulates a TLS-like handshake process.
+    Simulates a TLS-like handshake process with mutual authentication.
+    Prevents man-in-the-middle attacks by verifying both client and server certificates.
     """
     
     @staticmethod
     def server_handshake(server_cert_pem: str, server_key_pem: str,
                         ca_cert_pem: str, client_cert_pem: Optional[str] = None) -> dict:
         """
-        Perform server-side handshake.
+        Perform server-side handshake with optional client certificate verification.
         
         Args:
             server_cert_pem: Server certificate
@@ -242,7 +242,15 @@ class SecureHandshake:
         if not channel.verify_certificate(server_cert_pem):
             raise ValueError("Server certificate verification failed")
         
-        # Generate session key
+        # If client certificate provided, verify it (mutual TLS)
+        client_verified = False
+        if client_cert_pem:
+            client_verified = channel.verify_certificate(client_cert_pem)
+            if not client_verified:
+                raise ValueError("Client certificate verification failed - possible MITM attack!")
+            print("   [Server] Client certificate verified against CA ✓")
+        
+        # Generate session key only after successful verification
         session_key = channel.generate_session_key()
         
         # Extract server public key from certificate
@@ -258,7 +266,55 @@ class SecureHandshake:
                 format=serialization.PublicFormat.SubjectPublicKeyInfo
             ).decode(),
             "session_key": session_key,
-            "channel": channel
+            "channel": channel,
+            "client_verified": client_verified
+        }
+    
+    @staticmethod
+    def server_verify_client_and_create_session(ca_cert_pem: str, 
+                                                  client_cert_pem: str,
+                                                  server_key_pem: str) -> dict:
+        """
+        Server verifies client certificate and creates a session key for communication.
+        This prevents man-in-the-middle attacks.
+        
+        Args:
+            ca_cert_pem: CA certificate for verification
+            client_cert_pem: Client certificate to verify
+            server_key_pem: Server private key
+            
+        Returns:
+            Dictionary with session info
+        """
+        channel = SecureChannel(ca_cert_pem)
+        
+        # Verify client certificate against CA
+        if not channel.verify_certificate(client_cert_pem):
+            raise ValueError("Client certificate verification FAILED - Rejecting connection!")
+        
+        print("   [Server] Client certificate verified against CA ✓")
+        
+        # Generate session key for secure communication
+        session_key = channel.generate_session_key()
+        
+        # Extract client public key from certificate
+        client_cert = x509.load_pem_x509_certificate(
+            client_cert_pem.encode(), default_backend()
+        )
+        client_public_key = client_cert.public_key()
+        
+        # Encrypt session key with client's public key
+        encrypted_session_key = channel.encrypt_session_key(client_cert_pem, session_key)
+        
+        return {
+            "session_key": session_key,
+            "encrypted_session_key": encrypted_session_key,
+            "client_public_key": client_public_key.public_bytes(
+                encoding=serialization.Encoding.PEM,
+                format=serialization.PublicFormat.SubjectPublicKeyInfo
+            ).decode(),
+            "channel": channel,
+            "verified": True
         }
     
     @staticmethod
@@ -283,6 +339,11 @@ class SecureHandshake:
         # Encrypt session key with server's public key
         server_public_key_pem = server_response["server_public_key"]
         session_key = server_response["session_key"]
+        
+        # Convert session key from hex string to bytes if needed
+        if isinstance(session_key, str):
+            session_key = bytes.fromhex(session_key)
+        
         encrypted_session_key = channel.encrypt_session_key(
             server_public_key_pem,
             session_key

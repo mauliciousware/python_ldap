@@ -35,6 +35,10 @@ class SecureServer:
         self.server_key_pem = server_key_pem
         self.ca_cert_pem = ca.get_ca_certificate()
         
+        # Session management
+        self._current_session_key: Optional[bytes] = None
+        self._current_channel: Optional[SecureChannel] = None
+        
         # Get server certificate
         self.server_cert_pem = self._get_server_certificate()
     
@@ -82,6 +86,9 @@ class SecureServer:
         if request_type == "handshake":
             return self._handle_handshake(client_request)
         
+        elif request_type == "mutual_handshake":
+            return self._handle_mutual_handshake(client_request)
+        
         elif request_type == "encrypted_message":
             return self._handle_encrypted_message(client_request)
         
@@ -91,11 +98,15 @@ class SecureServer:
     def _handle_handshake(self, request: Dict) -> Dict:
         """Handle client handshake request."""
         try:
-            # Perform server handshake
+            # Get client certificate if provided (for mutual TLS)
+            client_cert_pem = request.get("client_certificate")
+            
+            # Perform server handshake with optional client verification
             handshake_result = SecureHandshake.server_handshake(
                 self.server_cert_pem,
                 self.server_key_pem,
-                self.ca_cert_pem
+                self.ca_cert_pem,
+                client_cert_pem=client_cert_pem
             )
             
             return {
@@ -103,35 +114,75 @@ class SecureServer:
                 "type": "handshake_response",
                 "server_certificate": handshake_result["server_certificate"],
                 "server_public_key": handshake_result["server_public_key"],
-                "session_key": handshake_result["session_key"].hex()  # Convert to hex for JSON
+                "session_key": handshake_result["session_key"].hex(),
+                "client_verified": handshake_result.get("client_verified", False)
             }
         except Exception as e:
             return {"success": False, "error": str(e)}
     
+    def _handle_mutual_handshake(self, request: Dict) -> Dict:
+        """
+        Handle mutual TLS handshake - verify client certificate before creating session key.
+        This prevents man-in-the-middle attacks.
+        """
+        try:
+            client_cert_pem = request.get("client_certificate")
+            
+            if not client_cert_pem:
+                return {"success": False, "error": "Client certificate required for mutual authentication"}
+            
+            # Verify client certificate against CA and create session
+            session_result = SecureHandshake.server_verify_client_and_create_session(
+                self.ca_cert_pem,
+                client_cert_pem,
+                self.server_key_pem
+            )
+            
+            # Store session for this client (used for subsequent encrypted messages)
+            self._current_session_key = session_result["session_key"]
+            self._current_channel = session_result["channel"]
+            
+            return {
+                "success": True,
+                "type": "mutual_handshake_response",
+                "server_certificate": self.server_cert_pem,
+                "encrypted_session_key": session_result["encrypted_session_key"].hex(),
+                "client_verified": True,
+                "message": "Client certificate verified. Session key encrypted with your public key."
+            }
+        except Exception as e:
+            return {"success": False, "error": str(e), "client_verified": False}
+    
     def _handle_encrypted_message(self, request: Dict) -> Dict:
         """Handle encrypted message from client."""
         try:
-            encrypted_key_hex = request.get("encrypted_session_key")
             encrypted_message_hex = request.get("encrypted_message")
             
-            if not encrypted_key_hex or not encrypted_message_hex:
-                return {"success": False, "error": "Missing encrypted data"}
+            if not encrypted_message_hex:
+                return {"success": False, "error": "Missing encrypted message"}
             
-            # Decrypt session key
-            from auth.secure_communication import SecureChannel
-            channel = SecureChannel(self.ca_cert_pem)
-            encrypted_key = bytes.fromhex(encrypted_key_hex)
-            session_key = channel.decrypt_session_key(self.server_key_pem, encrypted_key)
+            # Use the stored session key from mutual handshake if available
+            if self._current_session_key and self._current_channel:
+                session_key = self._current_session_key
+                channel = self._current_channel
+            else:
+                # Fallback to decrypting session key (for non-mutual auth flow)
+                encrypted_key_hex = request.get("encrypted_session_key")
+                if not encrypted_key_hex:
+                    return {"success": False, "error": "Missing session key"}
+                
+                channel = SecureChannel(self.ca_cert_pem)
+                encrypted_key = bytes.fromhex(encrypted_key_hex)
+                session_key = channel.decrypt_session_key(self.server_key_pem, encrypted_key)
             
             # Decrypt message
             encrypted_message = bytes.fromhex(encrypted_message_hex)
             decrypted_message = channel.decrypt_message(encrypted_message, session_key)
             
-            # Process the decrypted message (parse as JSON or simple command)
-            # For simplicity, we'll echo it back
+            # Process the decrypted message and echo it back
             response_message = f"Server received: {decrypted_message}"
             
-            # Encrypt response
+            # Encrypt response with the same session key
             encrypted_response = channel.encrypt_message(response_message, session_key)
             
             return {
@@ -140,7 +191,7 @@ class SecureServer:
                 "encrypted_message": encrypted_response.hex()
             }
         except Exception as e:
-            return {"success": False, "error": str(e)}
+            return {"success": False, "error": f"Decryption failed: {str(e)}"}
     
     def send_certificate(self) -> Dict:
         """
