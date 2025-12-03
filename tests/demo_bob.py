@@ -15,8 +15,8 @@ from auth.roles import RegularUser
 def demo_bob():
     print("Setting up test environment for Bob...")
     test_ca_dir = "demo_ca_bob"
-    if os.path.exists(test_ca_dir):
-        shutil.rmtree(test_ca_dir)
+    # if os.path.exists(test_ca_dir):
+    #     shutil.rmtree(test_ca_dir)
     try:
         # Initialize CA
         ca = CertificateAuthority(ca_dir=test_ca_dir)
@@ -51,8 +51,9 @@ def demo_bob():
             print(f"Expected failure: {response_bob_2.get('error')}")
         print("\nDemo for Bob completed successfully.")
     finally:
-        if os.path.exists(test_ca_dir):
-            shutil.rmtree(test_ca_dir)
+        print("Cleaning up test environment...")
+    #     if os.path.exists(test_ca_dir):
+    #         shutil.rmtree(test_ca_dir)
 
 if __name__ == "__main__":
     demo_bob()

@@ -51,8 +51,9 @@ def demo_alice():
             print(f"Expected failure: {response_alice_2.get('error')}")
         print("\nDemo for Alice completed successfully.")
     finally:
-        if os.path.exists(test_ca_dir):
-            shutil.rmtree(test_ca_dir)
+        print("Cleaning up test environment...")
+    #     if os.path.exists(test_ca_dir):
+    #         shutil.rmtree(test_ca_dir)
 
 if __name__ == "__main__":
     demo_alice()
