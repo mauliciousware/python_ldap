@@ -276,6 +276,7 @@ class CertificateAuthority:
         """
         try:
             from cryptography.hazmat.primitives.asymmetric import padding
+            from datetime import datetime, timezone
             
             cert = x509.load_pem_x509_certificate(
                 cert_pem.encode(), default_backend()
@@ -289,9 +290,9 @@ class CertificateAuthority:
                 hashes.SHA256()
             )
             
-            # Check validity period
-            now = datetime.utcnow()
-            if cert.not_valid_before > now or cert.not_valid_after < now:
+            # Check validity period (using timezone-aware datetime)
+            now = datetime.now(timezone.utc)
+            if cert.not_valid_before_utc > now or cert.not_valid_after_utc < now:
                 return False
             
             return True
